@@ -1,19 +1,22 @@
-import os
 import firebase_admin
-from firebase_admin import credentials, firestore
-from dotenv import load_dotenv
+from firebase_admin import credentials
+from firebase_admin import firestore
+import os
+import json
 
-# Load environment variables
-load_dotenv()
-
-# Get the path to the service account key
-cred_path = os.getenv("FIREBASE_CREDENTIALS")
-
-# Initialize Firebase
+# Check if the app is initialized to avoid errors on reload
 if not firebase_admin._apps:
-    cred = credentials.Certificate(cred_path)
+    # Option 1: We are on Render (Cloud)
+    if os.getenv("FIREBASE_CREDENTIALS"):
+        # We load the JSON string directly from the environment variable
+        creds_dict = json.loads(os.getenv("FIREBASE_CREDENTIALS"))
+        cred = credentials.Certificate(creds_dict)
+    
+    # Option 2: We are on Local (Your Laptop)
+    else:
+        cred = credentials.Certificate("serviceAccountKey.json")
+
     firebase_admin.initialize_app(cred)
 
-# Export the database client
 db = firestore.client()
 print("--- Firebase Connected Successfully ---")
