@@ -21,6 +21,7 @@ class SleepSchema(BaseModel):
     user_id: str
     hours: float
     quality: int  # Scale 1-10
+    mood: str     # <--- ADDED: To track "Happy", "Anxious", etc.
     date: str     # YYYY-MM-DD
 
 class GratitudeSchema(BaseModel):
@@ -64,7 +65,7 @@ def login_user(user: LoginSchema):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid Credentials")
 
-# --- Sleep Endpoints (With Streaks) ---
+# --- Sleep Endpoints (With Streaks & Mood) ---
 @app.post("/sleep/add")
 def add_sleep_entry(entry: SleepSchema):
     try:
@@ -72,6 +73,7 @@ def add_sleep_entry(entry: SleepSchema):
             "user_id": entry.user_id,
             "hours": entry.hours,
             "quality": entry.quality,
+            "mood": entry.mood,   # <--- ADDED: Saving mood to database
             "date": entry.date,
             "created_at": firestore.SERVER_TIMESTAMP
         }
@@ -101,7 +103,7 @@ def add_sleep_entry(entry: SleepSchema):
             else:
                 user_ref.update({"streak_count": 1, "last_sleep_date": entry.date})
         
-        return {"status": "success", "message": "Sleep data saved successfully"}
+        return {"status": "success", "message": "Sleep & Mood data saved successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -158,27 +160,3 @@ def export_data_for_analytics(admin_secret: str = Header(None)):
         gratitude_ref = db.collection("gratitude_logs").stream()
 
         data = {
-            "users": [],
-            "sleep_logs": [],
-            "gratitude_logs": []
-        }
-
-        for doc in users_ref:
-            d = doc.to_dict()
-            if "created_at" in d: d["created_at"] = str(d["created_at"])
-            data["users"].append(d)
-
-        for doc in sleep_ref:
-            d = doc.to_dict()
-            if "created_at" in d: d["created_at"] = str(d["created_at"])
-            data["sleep_logs"].append(d)
-
-        for doc in gratitude_ref:
-            d = doc.to_dict()
-            if "created_at" in d: d["created_at"] = str(d["created_at"])
-            data["gratitude_logs"].append(d)
-        
-        return {"status": "success", "data": data}
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
