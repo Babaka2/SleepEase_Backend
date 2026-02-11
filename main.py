@@ -21,7 +21,7 @@ class SleepSchema(BaseModel):
     user_id: str
     hours: float
     quality: int  # Scale 1-10
-    mood: str     # <--- ADDED: To track "Happy", "Anxious", etc.
+    mood: str     # New Field: e.g., "Happy", "Anxious", "Neutral"
     date: str     # YYYY-MM-DD
 
 class GratitudeSchema(BaseModel):
@@ -73,7 +73,7 @@ def add_sleep_entry(entry: SleepSchema):
             "user_id": entry.user_id,
             "hours": entry.hours,
             "quality": entry.quality,
-            "mood": entry.mood,   # <--- ADDED: Saving mood to database
+            "mood": entry.mood,   
             "date": entry.date,
             "created_at": firestore.SERVER_TIMESTAMP
         }
@@ -98,7 +98,7 @@ def add_sleep_entry(entry: SleepSchema):
                 elif delta > 1:
                     current_streak = 1
                 
-                if delta > 0: # Only update if it's a new day
+                if delta > 0: 
                      user_ref.update({"streak_count": current_streak, "last_sleep_date": entry.date})
             else:
                 user_ref.update({"streak_count": 1, "last_sleep_date": entry.date})
@@ -160,3 +160,27 @@ def export_data_for_analytics(admin_secret: str = Header(None)):
         gratitude_ref = db.collection("gratitude_logs").stream()
 
         data = {
+            "users": [],
+            "sleep_logs": [],
+            "gratitude_logs": []
+        }
+
+        for doc in users_ref:
+            d = doc.to_dict()
+            if "created_at" in d: d["created_at"] = str(d["created_at"])
+            data["users"].append(d)
+
+        for doc in sleep_ref:
+            d = doc.to_dict()
+            if "created_at" in d: d["created_at"] = str(d["created_at"])
+            data["sleep_logs"].append(d)
+
+        for doc in gratitude_ref:
+            d = doc.to_dict()
+            if "created_at" in d: d["created_at"] = str(d["created_at"])
+            data["gratitude_logs"].append(d)
+        
+        return {"status": "success", "data": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
