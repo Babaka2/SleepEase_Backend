@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from database import db
 from firebase_admin import auth, firestore
 from datetime import datetime
+# --- IMPORT AYHAM'S AI ENGINE (Added) ---
+from ai_engine import get_mood_advice 
 
 app = FastAPI()
 
@@ -21,13 +23,17 @@ class SleepSchema(BaseModel):
     user_id: str
     hours: float
     quality: int  # Scale 1-10
-    mood: str     # New Field: e.g., "Happy", "Anxious", "Neutral"
+    mood: str     # "Happy", "Anxious", etc.
     date: str     # YYYY-MM-DD
 
 class GratitudeSchema(BaseModel):
     user_id: str
     content: str
     date: str  # YYYY-MM-DD
+
+# --- NEW: Chat Model (Added) ---
+class ChatSchema(BaseModel):
+    message: str
 
 # --- Root Endpoint ---
 @app.get("/")
@@ -145,6 +151,16 @@ def get_gratitude_list(user_id: str):
             if "created_at" in data: data["created_at"] = str(data["created_at"])
             notes.append(data)
         return {"status": "success", "data": notes}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# --- NEW: AI ENDPOINT (Added) ---
+@app.post("/ai/chat")
+def chat_with_ai(chat: ChatSchema):
+    try:
+        # Pass the user's message to Ayham's logic
+        ai_response = get_mood_advice(chat.message)
+        return {"status": "success", "reply": ai_response}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
