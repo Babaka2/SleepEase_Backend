@@ -1,7 +1,10 @@
+import nltk
+nltk.download('punkt_tab')
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from database import db
 from firebase_admin import auth, firestore
+
 from datetime import datetime
 # --- IMPORT AYHAM'S AI ENGINE (Added) ---
 from ai_engine import get_mood_advice 
