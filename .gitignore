@@ -1,3 +1,37 @@
+<<<<<<< HEAD
+=======
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment files (contain secrets)
+# .env
+# .env.local
+# .env.*.local
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Firebase
+>>>>>>> f0eb3a1 (Add all files including .env and serviceAccountKey)
 serviceAccountKey.json
 venv/
 .env
