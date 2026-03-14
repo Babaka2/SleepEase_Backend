@@ -22,11 +22,39 @@ export interface MoodEntry {
     created_at?: string;
 }
 
+interface LegacyGratitudeEntry {
+    id?: string;
+    content?: string;
+    date?: string;
+    created_at?: string;
+}
+
 // Helper to get auth token
 async function getAuthToken(): Promise<string> {
     const user = auth.currentUser;
     if (!user) throw new Error('用户未登录');
     return user.getIdToken();
+}
+
+function todayDateString() {
+    return new Date().toISOString().split('T')[0];
+}
+
+function parseLegacyMoodContent(content?: string): { emotion: Emotion; mode: AppMode; note?: string } {
+    const raw = String(content || '');
+    const emotionMatch = raw.match(/mood:([^;]+)/i);
+    const modeMatch = raw.match(/mode:([^;]+)/i);
+    const noteMatch = raw.match(/note:(.*)$/i);
+
+    const parsedEmotion = (emotionMatch?.[1]?.trim() || 'calm') as Emotion;
+    const parsedMode = (modeMatch?.[1]?.trim() || 'general').toLowerCase() as AppMode;
+    const parsedNote = noteMatch?.[1]?.trim();
+
+    return {
+        emotion: parsedEmotion,
+        mode: parsedMode === 'islamic' ? 'islamic' : 'general',
+        note: parsedNote || undefined,
+    };
 }
 
 // ==================== 保存心情 ====================
@@ -57,15 +85,42 @@ export async function saveMood(emotion: Emotion, mode: AppMode, note?: string) {
         body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('❌ 插入失败，完整错误:', JSON.stringify(error));
-        throw new Error(error.detail || 'Failed to save mood');
+    if (response.ok) {
+        const data = await response.json();
+        console.log('✅ 心情已保存!', data);
+        return data;
     }
 
-    const data = await response.json();
-    console.log('✅ 心情已保存!', data);
-    return data;
+    if (response.status === 404) {
+        // Legacy backend compatibility: store mood in gratitude content payload.
+        const legacyPayload = {
+            user_id: user.uid,
+            content: `mood:${emotion};mode:${mode};note:${note || ''}`,
+            date: todayDateString(),
+        };
+
+        const legacyResponse = await fetch(`${API_BASE_URL}/gratitude/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(legacyPayload),
+        });
+
+        if (legacyResponse.ok) {
+            const legacyData = await legacyResponse.json();
+            console.log('✅ 心情已通过兼容接口保存!', legacyData);
+            return legacyData;
+        }
+
+        const legacyError = await legacyResponse.json().catch(() => ({ detail: 'Legacy save failed' }));
+        throw new Error(legacyError.detail || 'Failed to save mood (legacy)');
+    }
+
+    const error = await response.json().catch(() => ({ detail: 'Failed to save mood' }));
+    console.error('❌ 插入失败，完整错误:', JSON.stringify(error));
+    throw new Error(error.detail || 'Failed to save mood');
 }
 
 // ==================== 获取心情历史 ====================
@@ -78,8 +133,33 @@ export async function getMoodHistory(limit = 30): Promise<MoodEntry[]> {
         headers: { 'Authorization': `Bearer ${token}` },
     });
 
-    if (!response.ok) throw new Error('Failed to fetch mood history');
-    return response.json();
+    if (response.ok) {
+        return response.json();
+    }
+
+    if (response.status === 404) {
+        const legacyResponse = await fetch(`${API_BASE_URL}/gratitude/list?user_id=${encodeURIComponent(user.uid)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (!legacyResponse.ok) {
+            return [];
+        }
+
+        const legacyList = await legacyResponse.json() as LegacyGratitudeEntry[];
+        return legacyList.slice(0, limit).map((entry) => {
+            const parsed = parseLegacyMoodContent(entry.content);
+            return {
+                id: entry.id,
+                emotion: parsed.emotion,
+                mode: parsed.mode,
+                note: parsed.note,
+                created_at: entry.created_at || entry.date,
+            };
+        });
+    }
+
+    throw new Error('Failed to fetch mood history');
 }
 
 // ==================== 获取今天的心情 ====================
@@ -92,8 +172,14 @@ export async function getTodayMood(): Promise<MoodEntry | null> {
         headers: { 'Authorization': `Bearer ${token}` },
     });
 
-    if (!response.ok) return null;
-    return response.json();
+    if (response.ok) return response.json();
+
+    if (response.status === 404) {
+        const history = await getMoodHistory(1);
+        return history[0] || null;
+    }
+
+    return null;
 }
 
 // ==================== 删除心情记录 ====================
@@ -104,5 +190,6 @@ export async function deleteMood(id: string) {
         headers: { 'Authorization': `Bearer ${token}` },
     });
 
-    if (!response.ok) throw new Error('Failed to delete mood');
+    if (response.ok || response.status === 404) return;
+    throw new Error('Failed to delete mood');
 }

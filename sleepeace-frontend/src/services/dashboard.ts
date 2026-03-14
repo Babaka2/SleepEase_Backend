@@ -14,6 +14,10 @@ export interface HomeStats {
 
 type AppMode = 'general' | 'islamic';
 
+interface OpenApiSchema {
+  paths?: Record<string, unknown>;
+}
+
 interface StreakResponse {
   streak?: number;
 }
@@ -32,7 +36,11 @@ interface EngagementResponse {
 
 interface MoodHistoryItem {
   mode?: string;
+  content?: string;
+  date?: string;
 }
+
+const pathSupportCache = new Map<string, boolean>();
 
 async function getAuthToken(): Promise<string> {
   const user = auth.currentUser;
@@ -56,6 +64,71 @@ async function fetchWithAuth<T>(path: string, token: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function hasPath(path: string): Promise<boolean> {
+  if (pathSupportCache.has(path)) {
+    return Boolean(pathSupportCache.get(path));
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/openapi.json`);
+    if (!response.ok) {
+      pathSupportCache.set(path, false);
+      return false;
+    }
+
+    const schema = await response.json() as OpenApiSchema;
+    const supported = Boolean(schema.paths && Object.prototype.hasOwnProperty.call(schema.paths, path));
+    pathSupportCache.set(path, supported);
+    return supported;
+  } catch {
+    pathSupportCache.set(path, false);
+    return false;
+  }
+}
+
+function parseLegacyMode(content?: string): AppMode {
+  const raw = String(content || '').toLowerCase();
+  return raw.includes('mode:islamic') ? 'islamic' : 'general';
+}
+
+function buildStreakFromDates(entries: MoodHistoryItem[]): number {
+  const dates = new Set(
+    entries
+      .map((entry) => String(entry.date || '').trim())
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+  );
+
+  let streak = 0;
+  const cursor = new Date();
+
+  while (true) {
+    const key = cursor.toISOString().split('T')[0];
+    if (!dates.has(key)) {
+      if (streak === 0) {
+        cursor.setDate(cursor.getDate() - 1);
+        const yesterday = cursor.toISOString().split('T')[0];
+        if (!dates.has(yesterday)) {
+          return 0;
+        }
+      } else {
+        break;
+      }
+    } else {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+      continue;
+    }
+
+    while (dates.has(cursor.toISOString().split('T')[0])) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    break;
+  }
+
+  return streak;
+}
+
 function getFulfilledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result.status === 'fulfilled' ? result.value : fallback;
 }
@@ -63,29 +136,43 @@ function getFulfilledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
 export async function fetchHomeStats(mode: AppMode): Promise<HomeStats> {
   const token = await getAuthToken();
 
-  const [streakResult, sleepIndexResult, trendResult, engagementResult, moodResult] = await Promise.allSettled([
-    fetchWithAuth<StreakResponse>('/logs/streak', token),
-    fetchWithAuth<SleepIndexResponse>('/analytics/sleep_index', token),
-    fetchWithAuth<EmotionalTrendResponse>('/analytics/emotional_trend', token),
-    fetchWithAuth<EngagementResponse>('/analytics/engagement', token),
-    fetchWithAuth<MoodHistoryItem[]>('/logs/mood?limit=100', token),
+  const [modernStreak, modernSleepIndex, modernTrend, modernEngagement, modernMood] = await Promise.all([
+    hasPath('/logs/streak'),
+    hasPath('/analytics/sleep_index'),
+    hasPath('/analytics/emotional_trend'),
+    hasPath('/analytics/engagement'),
+    hasPath('/logs/mood'),
   ]);
 
-  const streakData = getFulfilledValue(streakResult, {});
-  const sleepIndexData = getFulfilledValue(sleepIndexResult, {});
-  const trendData = getFulfilledValue(trendResult, {});
-  const engagementData = getFulfilledValue(engagementResult, {});
-  const moodData = getFulfilledValue(moodResult, []);
+  const [streakResult, sleepIndexResult, trendResult, engagementResult, moodResult, legacyGratitudeResult] = await Promise.allSettled([
+    modernStreak ? fetchWithAuth<StreakResponse>('/logs/streak', token) : Promise.resolve({}),
+    modernSleepIndex ? fetchWithAuth<SleepIndexResponse>('/analytics/sleep_index', token) : Promise.resolve({}),
+    modernTrend ? fetchWithAuth<EmotionalTrendResponse>('/analytics/emotional_trend', token) : Promise.resolve({}),
+    modernEngagement ? fetchWithAuth<EngagementResponse>('/analytics/engagement', token) : Promise.resolve({}),
+    modernMood ? fetchWithAuth<MoodHistoryItem[]>('/logs/mood?limit=100', token) : Promise.resolve([]),
+    fetchWithAuth<MoodHistoryItem[]>('/gratitude/list?user_id=' + encodeURIComponent(auth.currentUser?.uid || ''), token),
+  ]);
 
-  const streak = Math.max(0, Number(streakData.streak ?? 0));
+  const streakData = getFulfilledValue<StreakResponse>(streakResult, {});
+  const sleepIndexData = getFulfilledValue<SleepIndexResponse>(sleepIndexResult, {});
+  const trendData = getFulfilledValue<EmotionalTrendResponse>(trendResult, {});
+  const engagementData = getFulfilledValue<EngagementResponse>(engagementResult, {});
+  const moodData = getFulfilledValue(moodResult, []);
+  const legacyGratitudeData = getFulfilledValue(legacyGratitudeResult, []);
+
+  const fallbackStreak = buildStreakFromDates(legacyGratitudeData);
+  const fallbackEngagement = legacyGratitudeData.length;
+  const fallbackIslamic = legacyGratitudeData.filter((entry) => parseLegacyMode(entry.content) === 'islamic').length;
+
+  const streak = Math.max(0, Number(streakData.streak ?? fallbackStreak));
   const sleepIndexPct = Math.max(0, Math.min(100, Math.round(Number(sleepIndexData.sleep_improvement_index ?? 0))));
   const stabilityPct = Math.max(0, Math.min(100, Math.round(Number(trendData.avg_stability ?? 0) * 100)));
-  const engagementCount = Math.max(0, Number(engagementData.total_30d_logs ?? 0));
+  const engagementCount = Math.max(0, Number(engagementData.total_30d_logs ?? fallbackEngagement));
 
   const islamicCheckIns = moodData.filter((entry) => {
     const entryMode = String(entry.mode ?? '').toLowerCase();
     return entryMode === 'islamic';
-  }).length;
+  }).length || fallbackIslamic;
 
   if (mode === 'general') {
     return {
