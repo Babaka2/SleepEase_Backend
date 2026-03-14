@@ -46,6 +46,11 @@ interface IslamicModeHomeProps {
 export default function IslamicModeHome({ navigate, userInfo, currentLanguage }: IslamicModeHomeProps) {
   const t = translations[currentLanguage].islamicHome;
 
+  const handleEveningAdhkar = () => navigate('content-islamic');
+  const handleQuranAudio = () => navigate('content-islamic');
+  const handleDailyDuas = () => navigate('ai-chat-islamic');
+  const handlePeacefulSounds = () => navigate('content-islamic');
+
   return (
     <PhoneFrame>
       {/* Background gradient */}
@@ -186,7 +191,10 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
           <h3 className="text-white text-sm font-medium mb-3">{t.quickActions}</h3>
           <div className="grid grid-cols-2 gap-4">
             {/* Evening Adhkar */}
-            <button className="rounded-3xl bg-emerald-600/40 backdrop-blur-xl border border-emerald-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-emerald-600/50 active:scale-95">
+            <button
+              className="rounded-3xl bg-emerald-600/40 backdrop-blur-xl border border-emerald-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-emerald-600/50 active:scale-95"
+              onClick={handleEveningAdhkar}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.eveningAdhkar}</h3>
                 <p className="text-emerald-100/70 text-xs mt-1">{t.remembrance}</p>
@@ -202,7 +210,7 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
             {/* Quran Audio */}
             <button
               className="rounded-3xl bg-amber-600/40 backdrop-blur-xl border-2 border-yellow-400/30 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-amber-600/50 active:scale-95"
-              onClick={() => navigate('content-islamic')}
+              onClick={handleQuranAudio}
             >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.quranAudio}</h3>
@@ -217,7 +225,10 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
             </button>
 
             {/* Dua Collection */}
-            <button className="rounded-3xl bg-purple-600/40 backdrop-blur-xl border border-purple-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-purple-600/50 active:scale-95">
+            <button
+              className="rounded-3xl bg-purple-600/40 backdrop-blur-xl border border-purple-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-purple-600/50 active:scale-95"
+              onClick={handleDailyDuas}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.dailyDuas}</h3>
                 <p className="text-emerald-100/70 text-xs mt-1">{t.supplications}</p>
@@ -231,7 +242,10 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
             </button>
 
             {/* Islamic Meditation */}
-            <button className="rounded-3xl bg-teal-600/40 backdrop-blur-xl border border-teal-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-teal-600/50 active:scale-95">
+            <button
+              className="rounded-3xl bg-teal-600/40 backdrop-blur-xl border border-teal-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-teal-600/50 active:scale-95"
+              onClick={handlePeacefulSounds}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.peacefulSounds}</h3>
                 <p className="text-emerald-100/70 text-xs mt-1">{t.relaxation}</p>

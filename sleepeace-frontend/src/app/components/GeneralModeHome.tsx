@@ -48,6 +48,11 @@ interface GeneralModeHomeProps {
 export default function GeneralModeHome({ navigate, userInfo, currentLanguage }: GeneralModeHomeProps) {
   const t = translations[currentLanguage].generalHome;
 
+  const handleQuickRelax = () => navigate('content-general');
+  const handleSleepSounds = () => navigate('content-general');
+  const handleDeepBreathing = () => navigate('content-general');
+  const handleMeditationLibrary = () => navigate('content-general');
+
   return (
     <PhoneFrame>
       {/* Background gradient */}
@@ -155,7 +160,10 @@ export default function GeneralModeHome({ navigate, userInfo, currentLanguage }:
           <h3 className="text-white text-sm font-medium mb-3">{t.quickActions}</h3>
           <div className="grid grid-cols-2 gap-4">
             {/* Quick Relax */}
-            <button className="rounded-3xl bg-slate-700/60 backdrop-blur-xl border border-white/10 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-slate-700/70 active:scale-95">
+            <button
+              className="rounded-3xl bg-slate-700/60 backdrop-blur-xl border border-white/10 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-slate-700/70 active:scale-95"
+              onClick={handleQuickRelax}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.quickRelax}</h3>
                 <p className="text-white/60 text-xs mt-1">{t.quickRelax5min}</p>
@@ -169,7 +177,10 @@ export default function GeneralModeHome({ navigate, userInfo, currentLanguage }:
             </button>
 
             {/* Sleep Sounds */}
-            <button className="rounded-3xl bg-slate-600/50 backdrop-blur-xl border-2 border-white/30 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-slate-600/60 active:scale-95">
+            <button
+              className="rounded-3xl bg-slate-600/50 backdrop-blur-xl border-2 border-white/30 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-slate-600/60 active:scale-95"
+              onClick={handleSleepSounds}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.sleepSounds}</h3>
                 <p className="text-white/60 text-xs mt-1">{t.sleepSoundsTracks}</p>
@@ -183,7 +194,10 @@ export default function GeneralModeHome({ navigate, userInfo, currentLanguage }:
             </button>
 
             {/* Breathing */}
-            <button className="rounded-3xl bg-blue-600/40 backdrop-blur-xl border border-blue-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-blue-600/50 active:scale-95">
+            <button
+              className="rounded-3xl bg-blue-600/40 backdrop-blur-xl border border-blue-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-blue-600/50 active:scale-95"
+              onClick={handleDeepBreathing}
+            >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.deepBreathing}</h3>
                 <p className="text-white/60 text-xs mt-1">{t.deepBreathing3min}</p>
@@ -199,7 +213,7 @@ export default function GeneralModeHome({ navigate, userInfo, currentLanguage }:
             {/* Meditation */}
             <button
               className="rounded-3xl bg-purple-600/40 backdrop-blur-xl border border-purple-400/20 p-5 flex flex-col justify-between min-h-[140px] transition-all hover:bg-purple-600/50 active:scale-95"
-              onClick={() => navigate('content-general')}
+              onClick={handleMeditationLibrary}
             >
               <div>
                 <h3 className="text-white text-base font-medium whitespace-pre-line">{t.meditationLibrary}</h3>
