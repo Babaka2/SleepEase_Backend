@@ -11,7 +11,7 @@ import {
     signInWithPopup
 } from 'firebase/auth';
 
-const API_BASE_URL = 'https://sleepease-backend.onrender.com';
+const API_BASE_URL = import.meta.env.DEV ? '/api' : 'https://sleepease-backend.onrender.com';
 
 // ==================== Update User Mode ====================
 export async function updateUserMode(mode: string) {

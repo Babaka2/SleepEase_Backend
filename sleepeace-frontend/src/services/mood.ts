@@ -1,6 +1,6 @@
 import { auth } from '../lib/firebaseClient';
 
-const API_BASE_URL = 'https://sleepease-backend.onrender.com';
+const API_BASE_URL = import.meta.env.DEV ? '/api' : 'https://sleepease-backend.onrender.com';
 
 // ==================== 心情类型 ====================
 // General 模式心情

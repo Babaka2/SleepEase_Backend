@@ -1,5 +1,5 @@
 // Define the base URL for your FastAPI server
-const API_BASE_URL = "https://sleepease-backend.onrender.com";
+const API_BASE_URL = import.meta.env.DEV ? '/api' : 'https://sleepease-backend.onrender.com';
 
 /**
  * Interface for the AI Chat response

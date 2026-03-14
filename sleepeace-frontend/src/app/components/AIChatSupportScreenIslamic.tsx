@@ -42,6 +42,8 @@ interface AIChatSupportScreenIslamicProps {
   navigate: (screen: Screen, mode?: Mode) => void;
 }
 
+const CHAT_API_URL = import.meta.env.DEV ? '/api/chat' : 'https://sleepease-backend.onrender.com/chat';
+
 const quickPrompts = [
   { text: "Help me find peace", icon: "🤲" },
   { text: "Feeling anxious", icon: "😰" },
@@ -89,7 +91,7 @@ export default function AIChatSupportScreenIslamic({ navigate }: AIChatSupportSc
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const response = await fetch("https://sleepease-backend.onrender.com/chat", {
+      const response = await fetch(CHAT_API_URL, {
         method: "POST",
         headers,
         body: JSON.stringify({ message: userText, mode: "islamic" }),

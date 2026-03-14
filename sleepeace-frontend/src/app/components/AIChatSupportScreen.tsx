@@ -31,6 +31,8 @@ interface AIChatSupportScreenProps {
   userName: string;
 }
 
+const CHAT_API_URL = import.meta.env.DEV ? '/api/chat' : 'https://sleepease-backend.onrender.com/chat';
+
 const AIChatSupportScreen = ({ navigate, currentLanguage, userName }: AIChatSupportScreenProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([
@@ -61,7 +63,7 @@ const AIChatSupportScreen = ({ navigate, currentLanguage, userName }: AIChatSupp
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const response = await fetch("https://sleepease-backend.onrender.com/chat", {
+      const response = await fetch(CHAT_API_URL, {
         method: "POST",
         headers,
         body: JSON.stringify({ message: currentInput, mode: "general" }),
