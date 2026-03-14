@@ -18,8 +18,10 @@ import {
   Music,
   Wind
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import PhoneFrame from "./PhoneFrame";
 import { Language, translations } from "../translations";
+import { fetchHomeStats, HomeStats } from "../../services/dashboard";
 
 type Screen =
   | 'mode-selection'
@@ -45,11 +47,45 @@ interface IslamicModeHomeProps {
 
 export default function IslamicModeHome({ navigate, userInfo, currentLanguage }: IslamicModeHomeProps) {
   const t = translations[currentLanguage].islamicHome;
+  const [stats, setStats] = useState<HomeStats>({
+    streak: 0,
+    sleepIndexPct: 0,
+    stabilityPct: 0,
+    engagementCount: 0,
+    islamicCheckIns: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const handleEveningAdhkar = () => navigate('content-islamic');
   const handleQuranAudio = () => navigate('content-islamic');
   const handleDailyDuas = () => navigate('ai-chat-islamic');
   const handlePeacefulSounds = () => navigate('content-islamic');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHomeStats = async () => {
+      setStatsLoading(true);
+      try {
+        const data = await fetchHomeStats('islamic');
+        if (isMounted) {
+          setStats(data);
+        }
+      } catch (error) {
+        console.error('Failed to load islamic home stats:', error);
+      } finally {
+        if (isMounted) {
+          setStatsLoading(false);
+        }
+      }
+    };
+
+    loadHomeStats();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userInfo.email]);
 
   return (
     <PhoneFrame>
@@ -84,21 +120,21 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
           {/* Prayer Streak */}
           <div className="rounded-2xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 backdrop-blur-xl border border-emerald-400/20 p-3">
             <Flame className="w-5 h-5 text-emerald-400 mb-2" />
-            <p className="text-white text-xl font-bold">12</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : stats.streak}</p>
             <p className="text-emerald-100/70 text-xs">{t.dayStreak}</p>
           </div>
 
           {/* Spiritual Score */}
           <div className="rounded-2xl bg-gradient-to-br from-amber-500/25 to-yellow-500/25 backdrop-blur-xl border border-amber-400/20 p-3">
             <TrendingUp className="w-5 h-5 text-yellow-400 mb-2" />
-            <p className="text-white text-xl font-bold">92%</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : `${stats.stabilityPct}%`}</p>
             <p className="text-emerald-100/70 text-xs">{t.prayers}</p>
           </div>
 
           {/* Dhikr Count */}
           <div className="rounded-2xl bg-gradient-to-br from-purple-500/25 to-pink-500/25 backdrop-blur-xl border border-purple-400/20 p-3">
             <Star className="w-5 h-5 text-purple-400 mb-2" />
-            <p className="text-white text-xl font-bold">156</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : stats.islamicCheckIns}</p>
             <p className="text-emerald-100/70 text-xs">{t.duasMastered}</p>
           </div>
         </div>

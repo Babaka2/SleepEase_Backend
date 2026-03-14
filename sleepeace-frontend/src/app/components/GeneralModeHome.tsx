@@ -20,8 +20,10 @@ import {
   CheckCircle2,
   BarChart3
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import PhoneFrame from "./PhoneFrame";
 import { Language, translations } from "../translations";
+import { fetchHomeStats, HomeStats } from "../../services/dashboard";
 
 type Screen =
   | 'mode-selection'
@@ -47,11 +49,45 @@ interface GeneralModeHomeProps {
 
 export default function GeneralModeHome({ navigate, userInfo, currentLanguage }: GeneralModeHomeProps) {
   const t = translations[currentLanguage].generalHome;
+  const [stats, setStats] = useState<HomeStats>({
+    streak: 0,
+    sleepIndexPct: 0,
+    stabilityPct: 0,
+    engagementCount: 0,
+    islamicCheckIns: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const handleQuickRelax = () => navigate('content-general');
   const handleSleepSounds = () => navigate('content-general');
   const handleDeepBreathing = () => navigate('content-general');
   const handleMeditationLibrary = () => navigate('content-general');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHomeStats = async () => {
+      setStatsLoading(true);
+      try {
+        const data = await fetchHomeStats('general');
+        if (isMounted) {
+          setStats(data);
+        }
+      } catch (error) {
+        console.error('Failed to load general home stats:', error);
+      } finally {
+        if (isMounted) {
+          setStatsLoading(false);
+        }
+      }
+    };
+
+    loadHomeStats();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userInfo.email]);
 
   return (
     <PhoneFrame>
@@ -87,21 +123,21 @@ export default function GeneralModeHome({ navigate, userInfo, currentLanguage }:
           {/* Streak */}
           <div className="rounded-2xl bg-gradient-to-br from-orange-500/25 to-red-500/25 backdrop-blur-xl border border-orange-400/20 p-3">
             <Flame className="w-5 h-5 text-orange-400 mb-2" />
-            <p className="text-white text-xl font-bold">7</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : stats.streak}</p>
             <p className="text-white/70 text-xs">{t.streak}</p>
           </div>
 
           {/* Mood Score */}
           <div className="rounded-2xl bg-gradient-to-br from-blue-500/25 to-purple-500/25 backdrop-blur-xl border border-blue-400/20 p-3">
             <TrendingUp className="w-5 h-5 text-blue-400 mb-2" />
-            <p className="text-white text-xl font-bold">85%</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : `${stats.sleepIndexPct}%`}</p>
             <p className="text-white/70 text-xs">{t.progress}</p>
           </div>
 
           {/* Minutes */}
           <div className="rounded-2xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 backdrop-blur-xl border border-emerald-400/20 p-3">
             <Zap className="w-5 h-5 text-emerald-400 mb-2" />
-            <p className="text-white text-xl font-bold">42</p>
+            <p className="text-white text-xl font-bold">{statsLoading ? '...' : stats.engagementCount}</p>
             <p className="text-white/70 text-xs">{t.minutes}</p>
           </div>
         </div>
