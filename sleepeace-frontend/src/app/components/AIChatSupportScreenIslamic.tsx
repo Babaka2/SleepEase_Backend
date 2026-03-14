@@ -42,7 +42,9 @@ interface AIChatSupportScreenIslamicProps {
   navigate: (screen: Screen, mode?: Mode) => void;
 }
 
-const CHAT_API_URL = import.meta.env.DEV ? '/api/chat' : 'https://sleepease-backend.onrender.com/chat';
+const CHAT_API_URLS = import.meta.env.DEV
+  ? ['/api/chat', '/api/ai/chat']
+  : ['https://sleepease-backend.onrender.com/chat', 'https://sleepease-backend.onrender.com/ai/chat'];
 
 const quickPrompts = [
   { text: "Help me find peace", icon: "🤲" },
@@ -72,6 +74,28 @@ export default function AIChatSupportScreenIslamic({ navigate }: AIChatSupportSc
     scrollToBottom();
   }, [messages, isTyping]);
 
+  const requestChat = async (payload: { message: string; mode: string }, headers: Record<string, string>) => {
+    for (const url of CHAT_API_URLS) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 404) {
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      return response.json() as Promise<{ reply?: string; response?: string; message?: string }>;
+    }
+
+    throw new Error('No compatible chat endpoint found');
+  };
+
   // Send message to AI backend
   const sendToAI = async (userText: string) => {
     const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -91,18 +115,12 @@ export default function AIChatSupportScreenIslamic({ navigate }: AIChatSupportSc
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const response = await fetch(CHAT_API_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ message: userText, mode: "islamic" }),
-      });
-
-      const data = await response.json();
+      const data = await requestChat({ message: userText, mode: 'islamic' }, headers);
       const botTimestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
       setMessages(prev => [...prev, {
         id: Date.now(),
-        text: data.reply,
+        text: data.reply || data.response || data.message || 'May Allah bring peace to your heart.',
         sender: 'bot',
         timestamp: botTimestamp
       }]);

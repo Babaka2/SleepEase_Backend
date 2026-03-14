@@ -31,7 +31,9 @@ interface AIChatSupportScreenProps {
   userName: string;
 }
 
-const CHAT_API_URL = import.meta.env.DEV ? '/api/chat' : 'https://sleepease-backend.onrender.com/chat';
+const CHAT_API_URLS = import.meta.env.DEV
+  ? ['/api/chat', '/api/ai/chat']
+  : ['https://sleepease-backend.onrender.com/chat', 'https://sleepease-backend.onrender.com/ai/chat'];
 
 const AIChatSupportScreen = ({ navigate, currentLanguage, userName }: AIChatSupportScreenProps) => {
   const [message, setMessage] = useState("");
@@ -49,6 +51,28 @@ const AIChatSupportScreen = ({ navigate, currentLanguage, userName }: AIChatSupp
     scrollToBottom();
   }, [messages]);
 
+  const requestChat = async (payload: { message: string; mode: string }, headers: Record<string, string>) => {
+    for (const url of CHAT_API_URLS) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 404) {
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      return response.json() as Promise<{ reply?: string; response?: string; message?: string }>;
+    }
+
+    throw new Error('No compatible chat endpoint found');
+  };
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
 
@@ -63,17 +87,11 @@ const AIChatSupportScreen = ({ navigate, currentLanguage, userName }: AIChatSupp
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const response = await fetch(CHAT_API_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ message: currentInput, mode: "general" }),
-      });
-
-      const data = await response.json();
+      const data = await requestChat({ message: currentInput, mode: 'general' }, headers);
 
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
-        text: data.reply,
+        text: data.reply || data.response || data.message || 'I am here with you.',
         sender: 'bot'
       }]);
     } catch (error) {

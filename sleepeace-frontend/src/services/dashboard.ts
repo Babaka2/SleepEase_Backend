@@ -91,6 +91,25 @@ function parseLegacyMode(content?: string): AppMode {
   return raw.includes('mode:islamic') ? 'islamic' : 'general';
 }
 
+function normalizeListPayload<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const candidates = ['data', 'items', 'results', 'entries', 'logs'];
+    for (const key of candidates) {
+      const candidate = record[key];
+      if (Array.isArray(candidate)) {
+        return candidate as T[];
+      }
+    }
+  }
+
+  return [];
+}
+
 function buildStreakFromDates(entries: MoodHistoryItem[]): number {
   const dates = new Set(
     entries
@@ -135,6 +154,7 @@ function getFulfilledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
 
 export async function fetchHomeStats(mode: AppMode): Promise<HomeStats> {
   const token = await getAuthToken();
+  const uid = auth.currentUser?.uid || '';
 
   const [modernStreak, modernSleepIndex, modernTrend, modernEngagement, modernMood] = await Promise.all([
     hasPath('/logs/streak'),
@@ -150,15 +170,15 @@ export async function fetchHomeStats(mode: AppMode): Promise<HomeStats> {
     modernTrend ? fetchWithAuth<EmotionalTrendResponse>('/analytics/emotional_trend', token) : Promise.resolve({}),
     modernEngagement ? fetchWithAuth<EngagementResponse>('/analytics/engagement', token) : Promise.resolve({}),
     modernMood ? fetchWithAuth<MoodHistoryItem[]>('/logs/mood?limit=100', token) : Promise.resolve([]),
-    fetchWithAuth<MoodHistoryItem[]>('/gratitude/list?user_id=' + encodeURIComponent(auth.currentUser?.uid || ''), token),
+    fetchWithAuth<unknown>('/gratitude/list?user_id=' + encodeURIComponent(uid), token),
   ]);
 
   const streakData = getFulfilledValue<StreakResponse>(streakResult, {});
   const sleepIndexData = getFulfilledValue<SleepIndexResponse>(sleepIndexResult, {});
   const trendData = getFulfilledValue<EmotionalTrendResponse>(trendResult, {});
   const engagementData = getFulfilledValue<EngagementResponse>(engagementResult, {});
-  const moodData = getFulfilledValue(moodResult, []);
-  const legacyGratitudeData = getFulfilledValue(legacyGratitudeResult, []);
+  const moodData = normalizeListPayload<MoodHistoryItem>(getFulfilledValue<unknown>(moodResult, []));
+  const legacyGratitudeData = normalizeListPayload<MoodHistoryItem>(getFulfilledValue<unknown>(legacyGratitudeResult, []));
 
   const fallbackStreak = buildStreakFromDates(legacyGratitudeData);
   const fallbackEngagement = legacyGratitudeData.length;

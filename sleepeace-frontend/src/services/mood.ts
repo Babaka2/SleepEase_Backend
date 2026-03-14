@@ -29,6 +29,12 @@ interface LegacyGratitudeEntry {
     created_at?: string;
 }
 
+interface OpenApiSchema {
+    paths?: Record<string, unknown>;
+}
+
+const endpointSupportCache = new Map<string, boolean>();
+
 // Helper to get auth token
 async function getAuthToken(): Promise<string> {
     const user = auth.currentUser;
@@ -38,6 +44,47 @@ async function getAuthToken(): Promise<string> {
 
 function todayDateString() {
     return new Date().toISOString().split('T')[0];
+}
+
+function normalizeLegacyList(payload: unknown): LegacyGratitudeEntry[] {
+    if (Array.isArray(payload)) {
+        return payload as LegacyGratitudeEntry[];
+    }
+
+    if (payload && typeof payload === 'object') {
+        const record = payload as Record<string, unknown>;
+        const candidates = ['data', 'items', 'results', 'entries', 'logs'];
+        for (const key of candidates) {
+            const value = record[key];
+            if (Array.isArray(value)) {
+                return value as LegacyGratitudeEntry[];
+            }
+        }
+    }
+
+    return [];
+}
+
+async function hasPath(path: string): Promise<boolean> {
+    if (endpointSupportCache.has(path)) {
+        return Boolean(endpointSupportCache.get(path));
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/openapi.json`);
+        if (!response.ok) {
+            endpointSupportCache.set(path, false);
+            return false;
+        }
+
+        const schema = await response.json() as OpenApiSchema;
+        const supported = Boolean(schema.paths && Object.prototype.hasOwnProperty.call(schema.paths, path));
+        endpointSupportCache.set(path, supported);
+        return supported;
+    } catch {
+        endpointSupportCache.set(path, false);
+        return false;
+    }
 }
 
 function parseLegacyMoodContent(content?: string): { emotion: Emotion; mode: AppMode; note?: string } {
@@ -76,14 +123,17 @@ export async function saveMood(emotion: Emotion, mode: AppMode, note?: string) {
     };
     console.log('📦 准备插入的数据:', payload);
 
-    const response = await fetch(`${API_BASE_URL}/logs/mood`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-    });
+    const supportsModernMood = await hasPath('/logs/mood');
+    const response = supportsModernMood
+        ? await fetch(`${API_BASE_URL}/logs/mood`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+        })
+        : new Response(null, { status: 404 });
 
     if (response.ok) {
         const data = await response.json();
@@ -129,9 +179,12 @@ export async function getMoodHistory(limit = 30): Promise<MoodEntry[]> {
     if (!user) return [];
 
     const token = await getAuthToken();
-    const response = await fetch(`${API_BASE_URL}/logs/mood?limit=${limit}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const supportsModernMood = await hasPath('/logs/mood');
+    const response = supportsModernMood
+        ? await fetch(`${API_BASE_URL}/logs/mood?limit=${limit}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        })
+        : new Response(null, { status: 404 });
 
     if (response.ok) {
         return response.json();
@@ -146,7 +199,8 @@ export async function getMoodHistory(limit = 30): Promise<MoodEntry[]> {
             return [];
         }
 
-        const legacyList = await legacyResponse.json() as LegacyGratitudeEntry[];
+        const legacyPayload = await legacyResponse.json() as unknown;
+        const legacyList = normalizeLegacyList(legacyPayload);
         return legacyList.slice(0, limit).map((entry) => {
             const parsed = parseLegacyMoodContent(entry.content);
             return {
@@ -168,9 +222,12 @@ export async function getTodayMood(): Promise<MoodEntry | null> {
     if (!user) return null;
 
     const token = await getAuthToken();
-    const response = await fetch(`${API_BASE_URL}/logs/mood/today`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const supportsModernMood = await hasPath('/logs/mood/today');
+    const response = supportsModernMood
+        ? await fetch(`${API_BASE_URL}/logs/mood/today`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        })
+        : new Response(null, { status: 404 });
 
     if (response.ok) return response.json();
 
@@ -185,10 +242,13 @@ export async function getTodayMood(): Promise<MoodEntry | null> {
 // ==================== 删除心情记录 ====================
 export async function deleteMood(id: string) {
     const token = await getAuthToken();
-    const response = await fetch(`${API_BASE_URL}/logs/mood/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const supportsModernDelete = await hasPath('/logs/mood/{mood_id}');
+    const response = supportsModernDelete
+        ? await fetch(`${API_BASE_URL}/logs/mood/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+        })
+        : new Response(null, { status: 404 });
 
     if (response.ok || response.status === 404) return;
     throw new Error('Failed to delete mood');

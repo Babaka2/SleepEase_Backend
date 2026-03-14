@@ -21,17 +21,31 @@ export const fetchAIAdvice = async (message: string, mode: string = "general", t
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;
         }
-        const response = await fetch(`${API_BASE_URL}/chat`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ message, mode }),
-        });
+        const endpoints = [`${API_BASE_URL}/chat`, `${API_BASE_URL}/ai/chat`];
 
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
+        for (const endpoint of endpoints) {
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ message, mode }),
+            });
+
+            if (response.status === 404) {
+                continue;
+            }
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            const data = await response.json() as { status?: string; reply?: string; response?: string; message?: string };
+            return {
+                status: data.status || 'success',
+                reply: data.reply || data.response || data.message || 'I am here to support you.',
+            };
         }
 
-        return await response.json();
+        throw new Error('No compatible chat endpoint found');
     } catch (error) {
         console.error("Connection to SleepEase Backend failed:", error);
         return {
