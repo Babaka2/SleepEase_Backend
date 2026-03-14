@@ -25,11 +25,14 @@ import {
   Coffee,
   Smile,
   CloudRain,
-  ArrowLeft
+  ArrowLeft,
+  Shield,
+  BedDouble,
 } from 'lucide-react';
 import PhoneFrame from './PhoneFrame';
 import { Language, translations } from '../translations';
 import { getMoodHistory, type MoodEntry } from '../../services/mood';
+import { fetchMyScores, type MyScores } from '../../services/analytics';
 
 type Screen = 
   | 'mode-selection' 
@@ -156,17 +159,19 @@ export default function MoodHistoryScreen({ navigate, currentLanguage }: MoodHis
   const [selectedTab, setSelectedTab] = useState<'overview' | 'insights' | 'history'>('overview');
   const [entries, setEntries] = useState<MoodEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scores, setScores] = useState<MyScores | null>(null);
   const t = translations[currentLanguage].explore;
 
   useEffect(() => {
     getMoodHistory(100)
       .then(data => {
-        // Filter to general mode entries
         const general = data.filter(e => !e.mode || e.mode === 'general');
         setEntries(general.length > 0 ? general : data);
       })
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
+
+    fetchMyScores().then(setScores).catch(() => {});
   }, []);
 
   // Computed values
@@ -361,6 +366,7 @@ export default function MoodHistoryScreen({ navigate, currentLanguage }: MoodHis
                   distribution={distribution}
                   weeklyHeights={weeklyHeights}
                   trendPercent={trendPercent}
+                  scores={scores}
                 />
               )}
               {selectedTab === 'insights' && (
@@ -407,9 +413,10 @@ interface OverviewProps {
   distribution: { key: MoodKey; pct: number }[];
   weeklyHeights: number[];
   trendPercent: number;
+  scores: MyScores | null;
 }
 
-function OverviewTab({ currentLanguage, stats, distribution, weeklyHeights, trendPercent }: OverviewProps) {
+function OverviewTab({ currentLanguage, stats, distribution, weeklyHeights, trendPercent, scores }: OverviewProps) {
   const t = translations[currentLanguage].explore;
   const maxH = Math.max(...weeklyHeights, 1);
   
@@ -520,6 +527,100 @@ function OverviewTab({ currentLanguage, stats, distribution, weeklyHeights, tren
       {stats.checkIns === 0 && (
         <div className="rounded-3xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 backdrop-blur-xl border border-blue-400/20 p-5 text-center">
           <p className="text-white/70 text-sm">No check-ins yet. Start tracking your mood to see real data here!</p>
+        </div>
+      )}
+
+      {/* AI Analytics Scores */}
+      {scores && (
+        <div className="space-y-3">
+          <h3 className="text-white text-sm font-medium flex items-center gap-2">
+            <Brain className="w-4 h-4 text-indigo-400" />
+            AI Analytics
+          </h3>
+
+          {/* Sleep Improvement Index */}
+          <div className="rounded-2xl bg-gradient-to-br from-blue-500/15 to-cyan-500/15 backdrop-blur-xl border border-blue-400/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <BedDouble className="w-4 h-4 text-blue-400" />
+                <span className="text-white/90 text-xs font-medium">Sleep Improvement Index</span>
+              </div>
+              <span className="text-lg font-bold text-blue-400">
+                {scores.sleep_improvement_index?.sleep_improvement_index?.toFixed(0) ?? '—'}
+                <span className="text-xs text-white/40">/100</span>
+              </span>
+            </div>
+            {scores.sleep_improvement_index?.sub_scores && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <MiniScoreBar label="Quality" value={scores.sleep_improvement_index.sub_scores.quality_score} max={40} color="bg-blue-400" />
+                <MiniScoreBar label="Duration" value={scores.sleep_improvement_index.sub_scores.duration_fitness} max={30} color="bg-cyan-400" />
+                <MiniScoreBar label="Consistency" value={scores.sleep_improvement_index.sub_scores.consistency} max={30} color="bg-teal-400" />
+              </div>
+            )}
+            {scores.sleep_improvement_index?.trend_vs_last_week !== undefined && scores.sleep_improvement_index.trend_vs_last_week !== 0 && (
+              <div className={`text-xs mt-2 flex items-center gap-1 ${scores.sleep_improvement_index.trend_vs_last_week > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <TrendingUp className="w-3 h-3" />
+                {scores.sleep_improvement_index.trend_vs_last_week > 0 ? '+' : ''}{scores.sleep_improvement_index.trend_vs_last_week.toFixed(1)} vs last week
+              </div>
+            )}
+          </div>
+
+          {/* Emotion Stability Score */}
+          <div className="rounded-2xl bg-gradient-to-br from-purple-500/15 to-pink-500/15 backdrop-blur-xl border border-purple-400/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-purple-400" />
+                <span className="text-white/90 text-xs font-medium">Emotion Stability Score</span>
+              </div>
+              <span className="text-lg font-bold text-purple-400">
+                {scores.emotion_stability?.emotion_stability_score?.toFixed(0) ?? '—'}
+                <span className="text-xs text-white/40">/100</span>
+              </span>
+            </div>
+            {scores.emotion_stability?.sub_scores && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <MiniScoreBar label="Mood Consistency" value={scores.emotion_stability.sub_scores.mood_consistency} max={30} color="bg-purple-400" />
+                <MiniScoreBar label="Sentiment Trend" value={scores.emotion_stability.sub_scores.sentiment_trend} max={25} color="bg-pink-400" />
+                <MiniScoreBar label="AI Stability" value={scores.emotion_stability.sub_scores.ai_stability_avg} max={25} color="bg-violet-400" />
+                <MiniScoreBar label="Streak Bonus" value={scores.emotion_stability.sub_scores.streak_bonus} max={20} color="bg-fuchsia-400" />
+              </div>
+            )}
+          </div>
+
+          {/* Sleep Prediction */}
+          {scores.sleep_prediction?.predicted_quality != null && (
+            <div className="rounded-2xl bg-gradient-to-br from-indigo-500/15 to-blue-500/15 backdrop-blur-xl border border-indigo-400/20 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  <span className="text-white/90 text-xs font-medium">Tonight's Sleep Prediction</span>
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-indigo-400">{scores.sleep_prediction.predicted_quality}</span>
+                <span className="text-xs text-white/40">/10 quality</span>
+                <span className="ml-auto text-xs text-white/50">
+                  {(scores.sleep_prediction.confidence * 100).toFixed(0)}% confidence
+                </span>
+              </div>
+              <div className="text-[10px] text-white/40 mt-1">
+                Based on {scores.sleep_prediction.training_samples} entries · mood: {scores.sleep_prediction.current_mood}
+              </div>
+            </div>
+          )}
+
+          {/* Persona */}
+          {scores.persona && (
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400/30 to-orange-400/30 flex items-center justify-center">
+                <Star className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <div className="text-white/90 text-xs font-medium">{scores.persona.persona}</div>
+                <div className="text-white/40 text-[10px]">{scores.persona.traits?.join(' · ')}</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -655,6 +756,21 @@ function InsightCard({
           </div>
           <p className="text-white/70 text-xs leading-relaxed">{description}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniScoreBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-[10px] text-white/50 mb-1">
+        <span>{label}</span>
+        <span>{value?.toFixed(0)}</span>
+      </div>
+      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

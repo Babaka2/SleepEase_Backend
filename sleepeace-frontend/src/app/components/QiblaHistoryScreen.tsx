@@ -20,10 +20,14 @@ import {
   ArrowLeft,
   Heart,
   Sun,
-  Wind
+  Wind,
+  Brain,
+  Shield,
+  BedDouble,
 } from 'lucide-react';
 import PhoneFrame from './PhoneFrame';
 import { getMoodHistory, type MoodEntry } from '../../services/mood';
+import { fetchMyScores, type MyScores } from '../../services/analytics';
 
 type Screen = 
   | 'mode-selection' 
@@ -146,6 +150,7 @@ export default function QiblaHistoryScreen({ navigate }: QiblaHistoryScreenProps
   const [selectedTab, setSelectedTab] = useState<'overview' | 'insights' | 'history'>('overview');
   const [entries, setEntries] = useState<MoodEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scores, setScores] = useState<MyScores | null>(null);
 
   useEffect(() => {
     getMoodHistory(100)
@@ -155,6 +160,8 @@ export default function QiblaHistoryScreen({ navigate }: QiblaHistoryScreenProps
       })
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
+
+    fetchMyScores().then(setScores).catch(() => {});
   }, []);
 
   const stats = useMemo(() => {
@@ -356,6 +363,7 @@ export default function QiblaHistoryScreen({ navigate }: QiblaHistoryScreenProps
                   distribution={distribution}
                   weeklyHeights={weeklyHeights}
                   trendPercent={trendPercent}
+                  scores={scores}
                 />
               )}
               {selectedTab === 'insights' && (
@@ -401,9 +409,10 @@ interface OverviewProps {
   distribution: { key: MoodKey; pct: number }[];
   weeklyHeights: number[];
   trendPercent: number;
+  scores: MyScores | null;
 }
 
-function OverviewTab({ stats, distribution, weeklyHeights, trendPercent }: OverviewProps) {
+function OverviewTab({ stats, distribution, weeklyHeights, trendPercent, scores }: OverviewProps) {
   const maxH = Math.max(...weeklyHeights, 1);
 
   return (
@@ -528,6 +537,94 @@ function OverviewTab({ stats, distribution, weeklyHeights, trendPercent }: Overv
       {stats.checkIns === 0 && (
         <div className="rounded-3xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 backdrop-blur-xl border border-emerald-400/20 p-5 text-center">
           <p className="text-emerald-100/70 text-sm">No check-ins yet. Start your spiritual journey to see real data here!</p>
+        </div>
+      )}
+
+      {/* AI Analytics Scores */}
+      {scores && (
+        <div className="space-y-3">
+          <h3 className="text-emerald-100 text-sm font-medium flex items-center gap-2">
+            <Brain className="w-4 h-4 text-emerald-400" />
+            AI Analytics
+          </h3>
+
+          {/* Sleep Improvement Index */}
+          <div className="rounded-2xl bg-gradient-to-br from-teal-500/15 to-emerald-500/15 backdrop-blur-xl border border-teal-400/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <BedDouble className="w-4 h-4 text-teal-400" />
+                <span className="text-white/90 text-xs font-medium">Sleep Improvement Index</span>
+              </div>
+              <span className="text-lg font-bold text-teal-400">
+                {scores.sleep_improvement_index?.sleep_improvement_index?.toFixed(0) ?? '\u2014'}
+                <span className="text-xs text-white/40">/100</span>
+              </span>
+            </div>
+            {scores.sleep_improvement_index?.sub_scores && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <QMiniBar label="Quality" value={scores.sleep_improvement_index.sub_scores.quality_score} max={40} color="bg-teal-400" />
+                <QMiniBar label="Duration" value={scores.sleep_improvement_index.sub_scores.duration_fitness} max={30} color="bg-emerald-400" />
+                <QMiniBar label="Consistency" value={scores.sleep_improvement_index.sub_scores.consistency} max={30} color="bg-green-400" />
+              </div>
+            )}
+          </div>
+
+          {/* Emotion Stability Score */}
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-500/15 to-green-500/15 backdrop-blur-xl border border-emerald-400/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="text-white/90 text-xs font-medium">Emotion Stability Score</span>
+              </div>
+              <span className="text-lg font-bold text-emerald-400">
+                {scores.emotion_stability?.emotion_stability_score?.toFixed(0) ?? '\u2014'}
+                <span className="text-xs text-white/40">/100</span>
+              </span>
+            </div>
+            {scores.emotion_stability?.sub_scores && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <QMiniBar label="Mood Consistency" value={scores.emotion_stability.sub_scores.mood_consistency} max={30} color="bg-emerald-400" />
+                <QMiniBar label="Sentiment Trend" value={scores.emotion_stability.sub_scores.sentiment_trend} max={25} color="bg-green-400" />
+                <QMiniBar label="AI Stability" value={scores.emotion_stability.sub_scores.ai_stability_avg} max={25} color="bg-teal-400" />
+                <QMiniBar label="Streak Bonus" value={scores.emotion_stability.sub_scores.streak_bonus} max={20} color="bg-lime-400" />
+              </div>
+            )}
+          </div>
+
+          {/* Sleep Prediction */}
+          {scores.sleep_prediction?.predicted_quality != null && (
+            <div className="rounded-2xl bg-gradient-to-br from-yellow-500/15 to-amber-500/15 backdrop-blur-xl border border-yellow-400/20 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-yellow-400" />
+                  <span className="text-white/90 text-xs font-medium">Tonight's Sleep Prediction</span>
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-yellow-400">{scores.sleep_prediction.predicted_quality}</span>
+                <span className="text-xs text-white/40">/10 quality</span>
+                <span className="ml-auto text-xs text-white/50">
+                  {(scores.sleep_prediction.confidence * 100).toFixed(0)}% confidence
+                </span>
+              </div>
+              <div className="text-[10px] text-white/40 mt-1">
+                Based on {scores.sleep_prediction.training_samples} entries \u00b7 mood: {scores.sleep_prediction.current_mood}
+              </div>
+            </div>
+          )}
+
+          {/* Persona */}
+          {scores.persona && (
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-400/30 to-amber-400/30 flex items-center justify-center">
+                <Star className="w-4 h-4 text-yellow-400" />
+              </div>
+              <div>
+                <div className="text-white/90 text-xs font-medium">{scores.persona.persona}</div>
+                <div className="text-white/40 text-[10px]">{scores.persona.traits?.join(' \u00b7 ')}</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -656,6 +753,21 @@ function InsightCard({
           </div>
           <p className="text-emerald-100/80 text-xs leading-relaxed">{description}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function QMiniBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-[10px] text-white/50 mb-1">
+        <span>{label}</span>
+        <span>{value?.toFixed(0)}</span>
+      </div>
+      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

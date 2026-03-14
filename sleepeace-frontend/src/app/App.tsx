@@ -20,6 +20,7 @@ import QiblaHistoryScreen from './components/QiblaHistoryScreen';
 import SettingsModeSwitching from './components/SettingsModeSwitching';
 import SettingsModeSwitchingIslamic from './components/SettingsModeSwitchingIslamic';
 import LanguageSelection from './components/LanguageSelection';
+import AdminDashboard from './components/AdminDashboard';
 import { Language, translations } from './translations';
 import { auth } from '../lib/firebaseClient';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -43,7 +44,8 @@ type Screen =
   | 'mood-history-islamic'
   | 'settings'
   | 'settings-islamic'
-  | 'language-selection';
+  | 'language-selection'
+  | 'admin-dashboard';
 
 export interface UserInfo {
   name: string;
@@ -130,6 +132,8 @@ export default function App() {
     return <SettingsModeSwitchingIslamic navigate={navigate} currentMode={selectedMode as 'general' | 'islamic'} userInfo={userInfo} onLogout={handleLogout} currentLanguage={currentLanguage} />;
   } else if (currentScreen === 'language-selection') {
     return <LanguageSelection navigate={navigate} currentMode={selectedMode as 'general' | 'islamic'} currentLanguage={currentLanguage} onLanguageChange={setCurrentLanguage} />;
+  } else if (currentScreen === 'admin-dashboard') {
+    return <AdminDashboard navigate={navigate} />;
   }
 
   // Get translations for mode selection
@@ -290,6 +294,14 @@ export default function App() {
         <p className="mt-6 text-white/30 text-xs text-center">
           You can switch modes anytime in settings
         </p>
+
+        {/* Admin access */}
+        <button
+          onClick={() => navigate('admin-dashboard')}
+          className="mt-2 text-white/20 hover:text-white/50 text-[10px] transition-colors"
+        >
+          Admin Panel
+        </button>
       </div>
     </PhoneFrame>
   );

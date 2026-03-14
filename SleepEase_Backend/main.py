@@ -12,7 +12,17 @@ from typing import List, Optional
 from database import db
 from firebase_admin import auth, firestore
 from ai_engine import get_mood_advice
-from analytics import calculate_sleep_index, mine_user_persona, get_churn_metrics, get_engagement_density
+from analytics import (
+    calculate_sleep_index,
+    calculate_emotion_stability,
+    mine_user_persona,
+    get_churn_metrics,
+    get_engagement_density,
+    get_retention_cohorts,
+    get_bi_dashboard,
+)
+from ml_engine import predict_churn, cluster_users, predict_sleep_quality
+from compliance_engine import run_compliance_check, get_compliance_stats
 from security_utils import encrypt_text, decrypt_text
 
 app = FastAPI(title="SleepEase Backend")
@@ -123,23 +133,39 @@ def chat_with_ai(chat: ChatSchema, current_user: dict = Depends(get_current_user
     """
     try:
         ai_data = get_mood_advice(chat.message, chat.mode)
-        
+
+        # ── Compliance Monitoring (Islamic content safety layer) ──
+        compliance = run_compliance_check(
+            ai_response=ai_data["reply"],
+            mode=chat.mode,
+            db=db,
+            user_id=current_user["uid"],
+        )
+        # Use the filtered (safe) response
+        safe_reply = compliance["filtered_response"]
+
         # PERSIST: Save to Firestore for the Progress Dashboard
         db.collection("chat_logs").add({
             "user_id": current_user["uid"],
             "message": encrypt_text(chat.message),  # Requirement 3: Encryption
-            "reply": encrypt_text(ai_data["reply"]), # Requirement 3: Encryption
+            "reply": encrypt_text(safe_reply),       # Requirement 3: Encryption
             "sentiment": ai_data["sentiment"],
             "stability_score": ai_data["stability_score"],
+            "compliance_score": compliance["compliance_score"],
+            "compliance_passed": compliance["passed"],
             "mode": chat.mode,
             "created_at": firestore.SERVER_TIMESTAMP
         })
 
         return {
-            "status": "success", 
-            "reply": ai_data["reply"],
+            "status": "success",
+            "reply": safe_reply,
             "sentiment": ai_data["sentiment"],
-            "stability_score": ai_data["stability_score"]
+            "stability_score": ai_data["stability_score"],
+            "compliance": {
+                "score": compliance["compliance_score"],
+                "passed": compliance["passed"],
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -294,57 +320,222 @@ def get_user_streak(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ANALYTICS – Quantitative Metrics
+# ═══════════════════════════════════════════════════════════════════════════
+
 @app.get("/analytics/sleep_index")
 def get_sleep_improvement_index(current_user: dict = Depends(get_current_user)):
     """
-    Requirement 7: Sleep Improvement Index
+    Sleep Improvement Index (SII) – 0 to 100 composite score
+    with sub-scores for quality, duration fitness, and consistency.
     """
     try:
-        index = calculate_sleep_index(db, current_user["uid"])
-        return {"status": "success", "sleep_improvement_index": index}
+        result = calculate_sleep_index(db, current_user["uid"])
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/analytics/emotion_stability")
+def get_emotion_stability_score(current_user: dict = Depends(get_current_user)):
+    """
+    Emotion Stability Score (ESS) – 0 to 100 composite score
+    with sub-scores for mood consistency, sentiment trend,
+    AI-detected stability, and streak bonus.
+    """
+    try:
+        result = calculate_emotion_stability(db, current_user["uid"])
+        return {"status": "success", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/analytics/persona")
 def get_user_persona(current_user: dict = Depends(get_current_user)):
     """
-    Persona Mining & User Segmentation
+    Multi-dimensional persona segmentation with traits and activity.
     """
     try:
-        persona = mine_user_persona(db, current_user["uid"])
-        return {"status": "success", "persona": persona}
+        result = mine_user_persona(db, current_user["uid"])
+        return {"status": "success", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/analytics/emotional_trend")
 def get_emotional_stability_trend(current_user: dict = Depends(get_current_user)):
     """
-    Requirement 7: Emotion Stability Score Trend
-    Calculates avg stability from recent chats.
+    Emotion Stability Score Trend (legacy endpoint kept for compatibility).
     """
     try:
-        logs = db.collection("chat_logs").where("user_id", "==", current_user["uid"]).order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
-        scores = [l.to_dict().get("stability_score", 0.5) for l in logs]
-        avg_score = sum(scores) / len(scores) if scores else 0.5
-        return {"status": "success", "avg_stability": round(avg_score, 2)}
+        result = calculate_emotion_stability(db, current_user["uid"])
+        return {
+            "status": "success",
+            "avg_stability": round(result["emotion_stability_score"] / 100, 2),
+            "full_report": result,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/analytics/churn")
-def get_bi_churn_analytics(admin_secret: str = Header(None)):
-    """
-    BI Requirement: Global churn metrics for Salman Zaman.
-    """
-    if admin_secret != os.getenv("ADMIN_SECRET"):
-         raise HTTPException(status_code=403, detail="Access Denied")
-    return get_churn_metrics(db)
 
 @app.get("/analytics/engagement")
 def get_user_engagement_density(current_user: dict = Depends(get_current_user)):
     """
-    Requirement 5: Analysis of log frequency.
+    Per-user engagement density with breakdown and rating.
     """
     return get_engagement_density(db, current_user["uid"])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ML ENGINE – Scikit-learn Models
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/ml/churn_prediction")
+def ml_churn_prediction(admin_secret: str = Header(None)):
+    """
+    Logistic Regression churn prediction for all users.
+    Returns per-user churn probability, risk level, and feature importances.
+    Admin-only endpoint.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        return {"status": "success", **predict_churn(db)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/ml/user_clusters")
+def ml_user_clustering(n_clusters: int = 4, admin_secret: str = Header(None)):
+    """
+    K-Means user segmentation/clustering.
+    Returns cluster assignments, centroids, and summary.
+    Admin-only endpoint.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        n = min(max(2, n_clusters), 10)  # clamp 2-10
+        return {"status": "success", **cluster_users(db, n)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/ml/sleep_prediction")
+def ml_sleep_quality_prediction(current_user: dict = Depends(get_current_user)):
+    """
+    Random Forest sleep quality prediction for the current user.
+    Predicts tonight's expected quality based on historical patterns.
+    """
+    try:
+        return {"status": "success", **predict_sleep_quality(db, current_user["uid"])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BI DASHBOARD – Business Intelligence
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/churn")
+def get_bi_churn_analytics(admin_secret: str = Header(None)):
+    """
+    Global churn metrics with weekly breakdown.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    return get_churn_metrics(db)
+
+@app.get("/analytics/retention_cohorts")
+def get_bi_retention_cohorts(admin_secret: str = Header(None)):
+    """
+    Weekly registration cohort retention analysis.
+    Essential data for Tableau / Power BI retention charts.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        return {"status": "success", **get_retention_cohorts(db)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/analytics/bi_dashboard")
+def get_full_bi_dashboard(admin_secret: str = Header(None)):
+    """
+    Comprehensive BI dashboard data in a single API call.
+    Includes: churn, retention cohorts, content volume, mode distribution, DAU.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        return {"status": "success", **get_bi_dashboard(db)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMPLIANCE – Islamic Content Safety Monitoring
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/compliance/stats")
+def get_compliance_dashboard(admin_secret: str = Header(None)):
+    """
+    Compliance monitoring dashboard stats.
+    Shows pass rate, block count, average score, and score distribution.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        return {"status": "success", **get_compliance_stats(db)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/compliance/audit_log")
+def get_compliance_audit_log(limit: int = 50, admin_secret: str = Header(None)):
+    """
+    Recent compliance audit entries for review.
+    """
+    if admin_secret != os.getenv("ADMIN_SECRET"):
+        raise HTTPException(status_code=403, detail="Access Denied")
+    try:
+        audits = db.collection("compliance_audits").order_by(
+            "created_at", direction=firestore.Query.DESCENDING
+        ).limit(limit).stream()
+        result = []
+        for a in audits:
+            data = a.to_dict()
+            data["id"] = a.id
+            if "created_at" in data and data["created_at"]:
+                data["created_at"] = str(data["created_at"])
+            result.append(data)
+        return {"status": "success", "audits": result, "count": len(result)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# USER SCORES – Combined personal analytics endpoint
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/my_scores")
+def get_my_scores(current_user: dict = Depends(get_current_user)):
+    """
+    Single endpoint returning all personal quantitative scores:
+    SII, ESS, persona, engagement, and sleep prediction.
+    """
+    try:
+        uid = current_user["uid"]
+        sii = calculate_sleep_index(db, uid)
+        ess = calculate_emotion_stability(db, uid)
+        persona = mine_user_persona(db, uid)
+        engagement = get_engagement_density(db, uid)
+        sleep_pred = predict_sleep_quality(db, uid)
+
+        return {
+            "status": "success",
+            "sleep_improvement_index": sii,
+            "emotion_stability": ess,
+            "persona": persona,
+            "engagement": engagement,
+            "sleep_prediction": sleep_pred,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- 8. Admin Export (For Salman/Analytics) ---
 @app.get("/admin/export_data")
