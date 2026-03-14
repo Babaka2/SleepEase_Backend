@@ -59,21 +59,51 @@ SleepEase helps Muslim users improve their sleep quality and spiritual well-bein
 - Include occasional relevant Arabic phrases with translations (e.g., "Alhamdulillah (All praise to Allah)")
 - It's typically nighttime when users chat with you"""
 
-def get_mood_advice(text_input: str, mode: str = "general") -> str:
+def extract_sentiment_data(text_input: str) -> dict:
     """
-    Use Groq to generate a compassionate response based on the app mode.
+    Analyzes the sentiment of the user's input and returns a structured score.
+    In a production app, this would use a dedicated NLP model or another LLM call.
+    Currently uses LLM-assisted analysis for the 'A' to 'Z' requirement.
+    """
+    try:
+        sentiment_prompt = f"Analyze the following text and return ONLY a JSON object with 'sentiment' (float 0.0 to 1.0, where 1.0 is very positive) and 'emotional_stability' (float 0.0 to 1.0, where 1.0 is very stable). Text: '{text_input}'"
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": sentiment_prompt}],
+            max_tokens=50,
+            temperature=0.1,
+            response_format={"type": "json_object"}
+        )
+        import json
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"Sentiment analysis error: {e}")
+        return {"sentiment": 0.5, "emotional_stability": 0.5}
+
+def get_mood_advice(text_input: str, mode: str = "general") -> dict:
+    """
+    Use Groq to generate a compassionate response and structured emotional data.
     
     Args:
         text_input: The user's message
         mode: Either "general" or "islamic" to use appropriate system prompt
+    
+    Returns:
+        A dictionary containing the AI reply and emotional scores.
     """
     if not text_input or not isinstance(text_input, str):
-        return "Please share how you're feeling tonight. I'm here to help you find peace."
+        return {
+            "reply": "Please share how you're feeling tonight. I'm here to help you find peace.",
+            "sentiment": 0.5,
+            "stability_score": 0.5
+        }
 
     # Select appropriate system prompt based on mode
     system_prompt = ISLAMIC_SYSTEM_PROMPT if mode == "islamic" else GENERAL_SYSTEM_PROMPT
 
     try:
+        # 1. Generate the AI Reply
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -83,16 +113,33 @@ def get_mood_advice(text_input: str, mode: str = "general") -> str:
             max_tokens=200,
             temperature=0.7
         )
-        return response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content.strip()
+
+        # 2. Extract Sentiment Data (Requirement 7: Predictive Well-Being)
+        analytics = extract_sentiment_data(text_input)
+
+        return {
+            "reply": reply,
+            "sentiment": analytics.get("sentiment", 0.5),
+            "stability_score": analytics.get("emotional_stability", 0.5)
+        }
     except Exception as e:
         print(f"Groq API error: {e}")
         # Fallback response based on mode
+        fallback_msg = ""
         if mode == "islamic":
-            return (
+            fallback_msg = (
                 "SubhanAllah, I'm here for you. Take a deep breath and remember that Allah is always with you. "
                 "Would you like to try some dhikr or read a calming dua?"
             )
-        return (
-            "I'm here for you. Take a deep breath and know that whatever you're feeling is valid. "
-            "Would you like to try a breathing exercise from our Daily Goals?"
-        )
+        else:
+            fallback_msg = (
+                "I'm here for you. Take a deep breath and know that whatever you're feeling is valid. "
+                "Would you like to try a breathing exercise from our Daily Goals?"
+            )
+        
+        return {
+            "reply": fallback_msg,
+            "sentiment": 0.5,
+            "stability_score": 0.5
+        }
