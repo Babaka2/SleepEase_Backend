@@ -18,10 +18,11 @@ import {
   Music,
   Wind
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import PhoneFrame from "./PhoneFrame";
 import { Language, translations } from "../translations";
 import { fetchHomeStats, HomeStats } from "../../services/dashboard";
+import { getMoodHistory, type MoodEntry } from "../../services/mood";
 
 type Screen =
   | 'mode-selection'
@@ -55,6 +56,55 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
     islamicCheckIns: 0,
   });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
+
+  // --- Today's Goals (localStorage, daily reset) ---
+  const todayKey = new Date().toISOString().split('T')[0];
+  const goalsStorageKey = `islamic-goals-${todayKey}`;
+  const [goals, setGoals] = useState<boolean[]>(() => {
+    try {
+      const saved = localStorage.getItem(goalsStorageKey);
+      return saved ? JSON.parse(saved) : [false, false, false];
+    } catch { return [false, false, false]; }
+  });
+  const toggleGoal = useCallback((idx: number) => {
+    setGoals(prev => {
+      const next = [...prev];
+      next[idx] = !next[idx];
+      localStorage.setItem(goalsStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }, [goalsStorageKey]);
+
+  // --- Weekly chart from real mood data ---
+  const weeklyHeights = useMemo(() => {
+    const scoreMap: Record<string, number> = { peaceful: 90, grateful: 85, calm: 80, happy: 80, worried: 40, anxious: 35, tired: 45, overwhelmed: 30, seeking: 55, sad: 40 };
+    const buckets: number[][] = [[], [], [], [], [], [], []];
+    moodEntries.forEach(e => {
+      const d = e.created_at ? new Date(e.created_at) : null;
+      if (!d || isNaN(d.getTime())) return;
+      const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+      if (diffDays > 6) return;
+      buckets[d.getDay()].push(scoreMap[e.emotion.toLowerCase()] ?? 50);
+    });
+    return buckets.map(b => b.length ? Math.round(b.reduce((a, c) => a + c, 0) / b.length) : 0);
+  }, [moodEntries]);
+
+  const trendPercent = useMemo(() => {
+    const scoreMap: Record<string, number> = { peaceful: 90, grateful: 85, calm: 80, happy: 80, worried: 40, anxious: 35, tired: 45, overwhelmed: 30, seeking: 55, sad: 40 };
+    const thisW: number[] = [], lastW: number[] = [];
+    moodEntries.forEach(e => {
+      const d = e.created_at ? new Date(e.created_at) : null;
+      if (!d || isNaN(d.getTime())) return;
+      const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+      const s = scoreMap[e.emotion.toLowerCase()] ?? 50;
+      if (diff <= 6) thisW.push(s); else if (diff <= 13) lastW.push(s);
+    });
+    if (!lastW.length) return 0;
+    const avgT = thisW.reduce((a, c) => a + c, 0) / (thisW.length || 1);
+    const avgL = lastW.reduce((a, c) => a + c, 0) / lastW.length;
+    return Math.round(((avgT - avgL) / avgL) * 100);
+  }, [moodEntries]);
 
   const handleEveningAdhkar = () => navigate('content-islamic');
   const handleQuranAudio = () => navigate('content-islamic');
@@ -81,6 +131,14 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
     };
 
     loadHomeStats();
+    getMoodHistory(100)
+      .then(data => {
+        if (isMounted) {
+          const islamic = data.filter(e => e.mode === 'islamic');
+          setMoodEntries(islamic.length > 0 ? islamic : data);
+        }
+      })
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -183,17 +241,20 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
             <IslamicGoalItem
               icon={<span className="text-base">🕌</span>}
               label={t.complete5Prayers}
-              completed={true}
+              completed={goals[0]}
+              onToggle={() => toggleGoal(0)}
             />
             <IslamicGoalItem
               icon={<span className="text-base">📖</span>}
               label={t.readQuranDaily}
-              completed={true}
+              completed={goals[1]}
+              onToggle={() => toggleGoal(1)}
             />
             <IslamicGoalItem
               icon={<span className="text-base">🤲</span>}
               label={t.morningEveningAdhkar}
-              completed={false}
+              completed={goals[2]}
+              onToggle={() => toggleGoal(2)}
             />
           </div>
         </div>
@@ -309,19 +370,21 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
                 <TrendingUp className="w-5 h-5 text-emerald-400" />
               </div>
               <div className="flex-1">
-                <p className="text-white text-sm font-medium">{t.growingStronger}</p>
-                <p className="text-emerald-100/70 text-xs">{t.spiritualGrowth}</p>
+                <p className="text-white text-sm font-medium">{trendPercent >= 0 ? t.growingStronger : 'Needs Attention'}</p>
+                <p className="text-emerald-100/70 text-xs">{trendPercent >= 0 ? '+' : ''}{trendPercent}% {t.spiritualGrowth?.replace(/\+\d+%\s*/, '') || 'spiritual growth'}</p>
               </div>
             </div>
 
             {/* Mini chart */}
             <div className="flex items-end justify-between gap-2 h-16">
-              {[65, 55, 75, 70, 85, 80, 92].map((height, i) => (
+              {weeklyHeights.map((height, i) => {
+                const maxH = Math.max(...weeklyHeights, 1);
+                return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full bg-gradient-to-t from-emerald-500/40 to-teal-500/40 rounded-t-lg transition-all" style={{ height: `${height}%` }} />
+                  <div className="w-full bg-gradient-to-t from-emerald-500/40 to-teal-500/40 rounded-t-lg transition-all" style={{ height: `${maxH > 0 ? Math.round((height / maxH) * 100) : 0}%` }} />
                   <span className="text-emerald-100/50 text-xs">{'SMTWTFS'[i]}</span>
-                </div>
-              ))}
+                </div>);
+              })}
             </div>
           </div>
         </div>
@@ -381,9 +444,9 @@ export default function IslamicModeHome({ navigate, userInfo, currentLanguage }:
 
 /* ---------- Components ---------- */
 
-function IslamicGoalItem({ icon, label, completed }: { icon: React.ReactNode; label: string; completed: boolean }) {
+function IslamicGoalItem({ icon, label, completed, onToggle }: { icon: React.ReactNode; label: string; completed: boolean; onToggle?: () => void }) {
   return (
-    <div className={`rounded-xl backdrop-blur-xl border p-3 flex items-center gap-3 ${completed
+    <button onClick={onToggle} className={`w-full rounded-xl backdrop-blur-xl border p-3 flex items-center gap-3 transition-all active:scale-[0.98] ${completed
         ? 'bg-emerald-500/20 border-emerald-400/30'
         : 'bg-white/10 border-white/20'
       }`}>
@@ -395,8 +458,8 @@ function IslamicGoalItem({ icon, label, completed }: { icon: React.ReactNode; la
           <div className="text-white/70">{icon}</div>
         )}
       </div>
-      <p className={`text-sm flex-1 ${completed ? 'text-white/90 line-through' : 'text-white/80'
+      <p className={`text-sm flex-1 text-left ${completed ? 'text-white/90 line-through' : 'text-white/80'
         }`}>{label}</p>
-    </div>
+    </button>
   );
 }
